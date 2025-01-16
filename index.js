@@ -66,16 +66,14 @@ const apiAgingKIP = {
 
 const originalFilePath = path.join(__dirname, 'sample.csv');
 
-function getPreviousDaysDates(days) {
-    const endDate = moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'); 
-    const startDate = moment('2024-01-01 00:00').format('YYYY-MM-DD HH:mm'); 
-    return { startDate, endDate };
-}
+// function getPreviousDaysDates() {
+//     const endDate = moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'); 
+//     const startDate = moment('2024-01-01 00:00').format('YYYY-MM-DD HH:mm'); 
+//     return { startDate, endDate };
+// }
 
-async function sendCombinedReport(chatId) {
+async function sendCombinedReport(chatId, startDate, endDate) {
     try {
-        const { startDate, endDate } = getPreviousDaysDates(30);
-
         const reportDateRange = `${startDate} - ${endDate}`;
         const timestamp = moment().format('YYYY-MM-DD HH:mm:ss');
         logger.info(`[${timestamp}] Sending API request to Unclosed with parameters: start_date=${startDate}, end_date=${endDate}`);
@@ -220,9 +218,8 @@ async function sendCombinedReport(chatId) {
     }
 }
 
-async function top3DetailsReport() {
+async function top3DetailsReport(chatId, startDate, endDate) {
     try {
-        const { startDate, endDate } = getPreviousDaysDates(30);
         const reportDateRange = `${startDate} - ${endDate}`;
 
         const timestamp = moment().format('YYYY-MM-DD HH:mm:ss');
@@ -293,19 +290,29 @@ bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     bot.sendMessage(chatId, 'Bot is running and will send the combined report.');
     try {
-        await sendCombinedReport(chatId);
-        await top3DetailsReport(chatId);
+       // send data 2024/01 - 2024/12
+       await sendCombinedReport(chatId, "2024-01-01 00:00", "2024-12-31 23:59");
+       await top3DetailsReport(chatId, "2024-01-01 00:00", "2024-12-31 23:59");
+
+       // send data 2024/01 - 2024/12
+       await sendCombinedReport(chatId, moment('2025-01-01 00:00').format('YYYY-MM-DD HH:mm'), moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'));
+       await top3DetailsReport(chatId, moment('2025-01-01 00:00').format('YYYY-MM-DD HH:mm'), moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'));
     } catch (error) {
         console.error('Error in sending combined report:', error.message);
     }
 });
 
-// Cron at 8 AM
-cron.schedule('0 8 * * *', async () => {
+// Cron at 9 AM
+cron.schedule('0 9 * * *', async () => {
     bot.sendMessage(chatId, 'Scheduled report is being sent now.');
     try {
-        await sendCombinedReport(chatId);
-        await top3DetailsReport(chatId);
+        // send data 2024/01 - 2024/12
+        await sendCombinedReport(chatId, "2024-01-01 00:00", "2024-12-31 23:59");
+        await top3DetailsReport(chatId, "2024-01-01 00:00", "2024-12-31 23:59");
+
+        // send data 2024/01 - 2024/12
+        await sendCombinedReport(chatId, moment('2025-01-01 00:00').format('YYYY-MM-DD HH:mm'), moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'));
+        await top3DetailsReport(chatId, moment('2025-01-01 00:00').format('YYYY-MM-DD HH:mm'), moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'));
     } catch (error) {
         console.error('Error in sending scheduled report:', error.message);
     }
