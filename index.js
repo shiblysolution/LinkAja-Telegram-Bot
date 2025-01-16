@@ -122,6 +122,7 @@ async function sendCombinedReport(chatId) {
 
         const slaMapping = {
             sla_1: '1HK',
+            sla_2: '2HK',
             sla_3: '3HK',
             sla_7: '7HK',
             sla_14: '14HK'
