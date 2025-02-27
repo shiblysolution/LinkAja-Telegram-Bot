@@ -64,7 +64,21 @@ const apiAgingKIP = {
     KIPAging: process.env.API_AgingOpenOut
 }
 
+const apiUrlTableSla = {
+    KipOutSla: 'https://crm.linkaja.id/svc/report/ticket-monitor/table/ticket-open-out-sla',
+    KipInSla: 'https://crm.linkaja.id/svc/report/ticket-monitor/table/ticket-open-in-sla',
+}
+
+const apiUrlCheckSummary = {
+    checkSummary: 'https://crm.linkaja.id/svc/report/ticket-monitor/telegram/check-summary',
+    insertSummary: 'https://crm.linkaja.id/svc/report/ticket-monitor/telegram/insert-summary',
+}
+
 const originalFilePath = path.join(__dirname, 'sample.csv');
+
+const currentYear = new Date().getFullYear();
+const previousYear = currentYear - 1;
+
 
 // function getPreviousDaysDates() {
 //     const endDate = moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'); 
@@ -198,11 +212,11 @@ async function sendCombinedReport(chatId, startDate, endDate) {
             type: 'telegram',
             start_date: startDate,
             end_date: endDate,
+            chat_id: chatId
         });
 
         if (response.data.success) {
-            const fileUrl = response.data.fileurl; 
-            const fileLink = `Download the detailed report <a href="${fileUrl}">here</a> (generated on ${timestamp}).`;
+            const fileLink = `Report ${currentYear} is being generated on the background and will send after complete`;
 
             reportString += `-------------------------------\n`;
             reportString += `${fileLink}\n`;
@@ -286,17 +300,204 @@ async function top3DetailsReport(chatId, startDate, endDate) {
     }
 }
 
+async function sendReportSummary(chatId, startDate, endDate, type="chat") {
+    try {
+        const reportDateRange = `${startDate} - ${endDate}`;
+        const timestamp = moment().format('YYYY-MM-DD HH:mm:ss');
+        logger.info(`[${timestamp}] Sending API request for ${previousYear} Data`);
+
+        const unclosedResponse = await axios.post(apiUrlsOpeninSLA.Unclosed, {
+            start_date: startDate,
+            end_date: endDate
+        });
+
+        logger.info(`[${timestamp}] Sending API request to OpenInSLA with parameters: start_date=${startDate}, end_date=${endDate}`);
+        const openInSLAResponse = await axios.post(apiUrlsOpeninSLA.OpenInSLA, {
+            start_date: startDate,
+            end_date: endDate
+        });
+
+        logger.info(`[${timestamp}] Sending API request to OpenOutSLA with parameters: start_date=${startDate}, end_date=${endDate}`);
+        const openOutSLAResponse = await axios.post(apiUrlsOpeninSLA.OpenOutSLA, {
+            start_date: startDate,
+            end_date: endDate
+        });
+
+        logger.info(`[${timestamp}] Received response for Unclosed: ${JSON.stringify(unclosedResponse.data)}`);
+        logger.info(`[${timestamp}] Received response for OpenInSLA: ${JSON.stringify(openInSLAResponse.data)}`);
+        logger.info(`[${timestamp}] Received response for OpenOutSLA: ${JSON.stringify(openOutSLAResponse.data)}`);
+
+        const unclosedCount = unclosedResponse.data.data[0].count_id;
+        const openInSLACount = openInSLAResponse.data.data[0].count_id;
+        const openOutSLACount = openOutSLAResponse.data.data[0].count_id;
+
+        const ticketData = `• <b>Ticket - Unclosed : </b>${unclosedCount}\n• <b>Ticket - Open In SLA : </b>${openInSLACount}\n• <b>Ticket - Open Out SLA : </b>${openOutSLACount}\n`;
+
+        let kipData = '';
+
+        logger.info(`[${timestamp}] Sending API request to KIP with parameters: channel=ALL, start_date=${startDate}, end_date=${endDate}, and url=${apiUrlTableSla.KipOutSla}`);
+        const kipResponse = await axios.post(apiUrlTableSla.KipOutSla, {
+            channel: "ALL",
+            start_date: startDate,
+            end_date: endDate
+        });
+
+        logger.info(`[${timestamp}] Received response for KIP: ${JSON.stringify(kipResponse.data)}`);
+
+        const delayedData = kipResponse.data.data;
+        if (delayedData.length > 0) {
+            kipData += `<b>KIP Out of SLA:\n</b>`;
+            delayedData.map((sla) => {
+                kipData += `• ${sla.judul}: ${sla.count_data}\n`;        
+                kipData += '\n';
+            })
+        }
+
+        logger.info(`[${timestamp}] Sending API request to KIP with parameters: channel=ALL, start_date=${startDate}, end_date=${endDate}, and url=${apiUrlTableSla.KipInSla}`);
+        const kipResponseInSLA = await axios.post(apiUrlTableSla.KipInSla, {
+            channel: "ALL",
+            start_date: startDate,
+            end_date: endDate
+        });
+
+        logger.info(`[${timestamp}] Received response for KIP: ${JSON.stringify(kipResponseInSLA.data)}`);
+
+        const delayedDataInSLA = kipResponseInSLA.data.data;
+
+        if (delayedDataInSLA.length > 0) {
+            kipData += `<b>KIP In SLA:\n</b>`;
+            delayedDataInSLA.map((sla) => {
+                kipData += `• ${sla.judul}: ${sla.count_data}\n`;        
+                kipData += '\n';
+            })
+        }
+
+        // for (const sla of sortedSLAKeys) {
+        //     const slaKey = slaMapping[sla] || sla;
+        //     kipData += `<b>TOP 5 KIP In SLA ${slaKey}:\n</b>`;
+
+        //     const sortedData = Object.entries(delayedData[sla].data).sort((a, b) => b[1] - a[1]);
+        //     const top3Items = sortedData.slice(0, 3);
+
+        //     top3Items.forEach(item => {
+        //         kipData += `• ${item[0]}: ${item[1]}\n`;
+        //     });
+        //     kipData += '\n';
+        // }
+
+        logger.info(`[${timestamp}] Sending API request to Closed with parameters: start_date=${startDate}, end_date=${endDate}`);
+        const closedResponse = await axios.post(apiUrlsOutinSLA.Closed, {
+            start_date: startDate,
+            end_date: endDate
+        });
+
+        logger.info(`[${timestamp}] Sending API request to ClosedInSLA with parameters: start_date=${startDate}, end_date=${endDate}`);
+        const closedInSLAResponse = await axios.post(apiUrlsOutinSLA.ClosedInSLA, {
+            start_date: startDate,
+            end_date: endDate
+        });
+
+        logger.info(`[${timestamp}] Sending API request to ClosedOutSLA with parameters: start_date=${startDate}, end_date=${endDate}`);
+        const closedOutSLAResponse = await axios.post(apiUrlsOutinSLA.ClosedOutSLA, {
+            start_date: startDate,
+            end_date: endDate
+        });
+
+        logger.info(`[${timestamp}] Received response for Closed: ${JSON.stringify(closedResponse.data)}`);
+        logger.info(`[${timestamp}] Received response for ClosedInSLA: ${JSON.stringify(closedInSLAResponse.data)}`);
+        logger.info(`[${timestamp}] Received response for ClosedOutSLA: ${JSON.stringify(closedOutSLAResponse.data)}`);
+
+        const closedCount = closedResponse.data.data[0].count_id;
+        const closedInSLACount = closedInSLAResponse.data.data[0].count_id;
+        const closedOutSLACount = closedOutSLAResponse.data.data[0].count_id;
+
+        const closingTicketData = `<b>• Ticket - Closed : </b>${closedCount}\n<b>• Ticket - Closed In SLA : </b>${closedInSLACount}\n<b>• Ticket - Closed Out SLA : </b>${closedOutSLACount}\n`;
+
+        if (Number(unclosedCount) <= 0) {
+            // update 27 feb 2025 => check and insert summary
+            if (type == "cron") {
+                logger.info(`[${timestamp}] Sending API request to Check Summary with parameters: year=${previousYear}`);
+                const checkSummary = await axios.post(apiUrlCheckSummary.checkSummary, {
+                    year: previousYear
+                });
+                logger.info(`[${timestamp}] Received response for Check Summary: ${JSON.stringify(checkSummary.data)}`);
+
+                // dont send message if already send
+                if (!checkSummary.data.success) {
+                    // insert summary
+                    logger.info(`[${timestamp}] Sending API request to Insert Summary with parameters: year=${previousYear}, ticket_closed=${closedCount}, ticket_closed_in_sla=${closedInSLACount}, ticket_closed_out_sla=${closedOutSLACount}`);
+                    const insertedData = await axios.post(apiUrlCheckSummary.insertSummary, {
+                        year: previousYear,
+                        ticket_closed: Number(closedCount),
+                        ticket_closed_in_sla: Number(closedInSLACount),
+                        ticket_closed_out_sla: Number(closedOutSLACount)
+                    });
+                    logger.info(`[${timestamp}] Received response for Insert Summary: ${JSON.stringify(insertedData.data)}`);
+                } else {
+                    return
+                }
+            } else {
+                return
+            }
+        }
+
+        let reportString = `Data will only count for ticket created in ${previousYear}\n`;
+        reportString += `------------------------------------------------------------------\n`
+        reportString += `<b>Summary ticket report ${previousYear}\n${previousYear}-01-01 00:00 - ${previousYear}-12-31 23:59</b>\n`
+        reportString += `------------------------------------------------------------------\n`;
+
+        reportString += '\n';
+        reportString += ticketData;
+        reportString += '\n';
+        reportString += '-------------------------------\n';
+        reportString += '\n';
+        reportString += kipData;
+        reportString += '-------------------------------\n';
+        reportString += '\n';
+        reportString += closingTicketData;
+
+        const response = await axios.post('https://crm.linkaja.id/svc/report/ticket-monitor/ticket-open-out-sla', {
+            type: 'telegram',
+            start_date: startDate,
+            end_date: endDate,
+            chat_id: chatId
+        });
+
+        if (response.data.success) {
+            const fileUrl = response.data.fileurl; 
+            const fileLink = `Report ${previousYear} is being generated on the background and will send after complete`;
+
+            reportString += `-------------------------------\n`;
+            reportString += `${fileLink}\n`;
+            reportString += `-------------------------------\n`;
+        } else {
+            reportString += 'Failed to fetch the detailed report data.\n';
+        }
+
+        bot.sendMessage(chatId, reportString, { parse_mode: 'HTML' });
+    } catch (error) {
+        logger.error(`[${moment().format('YYYY-MM-DD HH:mm:ss')}] Error generating report: ${error.message}`);
+        bot.sendMessage(chatId, `Error generating report: ${error.message}`);
+    }
+}
+
 bot.onText(/\/start/, async (msg) => {
     const chatId = msg.chat.id;
     bot.sendMessage(chatId, 'Bot is running and will send the combined report.');
     try {
-       // send data 2024/01 - 2024/12
-       await sendCombinedReport(chatId, "2024-01-01 00:00", "2024-12-31 23:59");
-       await top3DetailsReport(chatId, "2024-01-01 00:00", "2024-12-31 23:59");
-
-       // send data 2024/01 - 2024/12
-       await sendCombinedReport(chatId, moment('2025-01-01 00:00').format('YYYY-MM-DD HH:mm'), moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'));
-       await top3DetailsReport(chatId, moment('2025-01-01 00:00').format('YYYY-MM-DD HH:mm'), moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'));
+        if (`${currentYear}-01-01` === moment().format('YYYY-MM-DD')) {
+            // send data yearly Summary Report
+            await sendReportSummary(chatId, `${previousYear}-01-01 00:00`, `${previousYear}-12-31 23:59`)
+            // send current report
+            await sendCombinedReport(chatId, moment(`${currentYear}-01-01 00:00`).format('YYYY-MM-DD HH:mm'), moment().format('YYYY-MM-DD HH:mm'));
+            await top3DetailsReport(chatId, moment(`${currentYear}-01-01 00:00`).format('YYYY-MM-DD HH:mm'), moment().format('YYYY-MM-DD HH:mm'));
+        } else {
+            // send data yearly Summary Report
+            await sendReportSummary(chatId, `${previousYear}-01-01 00:00`, `${previousYear}-12-31 23:59`)
+            // send current report
+            await sendCombinedReport(chatId, moment(`${currentYear}-01-01 00:00`).format('YYYY-MM-DD HH:mm'), moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'));
+            await top3DetailsReport(chatId, moment(`${currentYear}-01-01 00:00`).format('YYYY-MM-DD HH:mm'), moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'));
+        }
     } catch (error) {
         console.error('Error in sending combined report:', error.message);
     }
@@ -306,13 +507,19 @@ bot.onText(/\/start/, async (msg) => {
 cron.schedule('0 9 * * *', async () => {
     bot.sendMessage(chatId, 'Scheduled report is being sent now.');
     try {
-        // send data 2024/01 - 2024/12
-        await sendCombinedReport(chatId, "2024-01-01 00:00", "2024-12-31 23:59");
-        await top3DetailsReport(chatId, "2024-01-01 00:00", "2024-12-31 23:59");
-
-        // send data 2024/01 - 2024/12
-        await sendCombinedReport(chatId, moment('2025-01-01 00:00').format('YYYY-MM-DD HH:mm'), moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'));
-        await top3DetailsReport(chatId, moment('2025-01-01 00:00').format('YYYY-MM-DD HH:mm'), moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'));
+        if (`${currentYear}-01-01` === moment().format('YYYY-MM-DD')) {
+            // send data yearly Summary Report
+            await sendReportSummary(chatId, `${previousYear}-01-01 00:00`, `${previousYear}-12-31 23:59`, "cron")
+            // send current report
+            await sendCombinedReport(chatId, moment(`${currentYear}-01-01 00:00`).format('YYYY-MM-DD HH:mm'), moment().format('YYYY-MM-DD HH:mm'));
+            await top3DetailsReport(chatId, moment(`${currentYear}-01-01 00:00`).format('YYYY-MM-DD HH:mm'), moment().format('YYYY-MM-DD HH:mm'));
+        } else {
+            // send data yearly Summary Report
+            await sendReportSummary(chatId, `${previousYear}-01-01 00:00`, `${previousYear}-12-31 23:59`, "cron")
+            // send current report
+            await sendCombinedReport(chatId, moment(`${currentYear}-01-01 00:00`).format('YYYY-MM-DD HH:mm'), moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'));
+            await top3DetailsReport(chatId, moment(`${currentYear}-01-01 00:00`).format('YYYY-MM-DD HH:mm'), moment().subtract(1, 'days').endOf('day').format('YYYY-MM-DD HH:mm'));
+        }
     } catch (error) {
         console.error('Error in sending scheduled report:', error.message);
     }
